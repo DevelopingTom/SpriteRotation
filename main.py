@@ -1,24 +1,20 @@
-
 import xml.etree.ElementTree as ET
 import plistlib
 import os
+import sys
+from pathlib import Path
 from PIL import Image
 
-def crop_image(image_path, position, size):
-    with Image.open(image_path) as im:
+def crop_image(image, position, size):
         x, y = position
         width, height = size
-        im = im.crop((x, y, x + width, y + height))
-        return im
+        image = image.crop((x, y, x + width, y + height))
+        return image
 
-
-def parse_string(s):
-    # Initialize an empty list to store the tuples
+def parse_position_and_size(s):
     components = []
     tuples = []
-    # Initialize an empty string to store the current component
     current_component = ""
-    # Iterate through each character in the input string
     for c in s:
         # If we see a comma, add the current component to the tuple as an integer
         if c == ",":
@@ -39,32 +35,111 @@ def parse_string(s):
             current_component += c
     return tuples
 
-class Animation:
+class Frame:
+    position = []
     size = []
-    y = 0
+
+class Animation:
+    frames = []
+    largest_size = [0, 0]
+    name = ''
+
+class SpriteDescription:
+    animations = {}
+    filepath = ''
+
+    def __init__(self, filepath):
+        self.filepath = filepath
+
+    def load(self):
+        with open(self.filepath, 'rb') as fp:
+            pl = plistlib.load(fp)
+            frames = pl["frames"]
+            for key, current_animation in frames.items():
+                frame = Frame()
+                full_animation_name = os.path.splitext(key)[0]
+                animation_name = full_animation_name[:-4]
+                animation_number = int(full_animation_name[-3:])
+                position_and_size = parse_position_and_size(current_animation["frame"][1:-1]) # remove wrapping brackets
+                frame.position = position_and_size[0]
+                frame.size = position_and_size[1]
+                if animation_name not in self.animations:
+                    print ("New animation: ", animation_name)
+                    self.animations[animation_name] = Animation()
+                self.animations[animation_name].frames.append(frame)
+                # pre-compute largest frame size
+                current_largest_size = self.animations[animation_name].largest_size
+                self.animations[animation_name].largest_size[0] = max(current_largest_size[0], frame.size[0])
+                self.animations[animation_name].largest_size[1] = max(current_largest_size[1], frame.size[1])
+
+    def compute_size(self):
+        size = [0, 0]
+        for animation_name in self.animations:
+            animation = self.animations[animation_name]
+            size[0] = max(size[0], animation.largest_size[0] * len(animation.frames))
+            size[1] = max(size[1], animation.largest_size[1])
+        size[1] = size[1] * len(self.animations)
+        return size
+
+class SpriteImage:
+    size = []
+    filename = ''
+    destination_image = None
+
+    def __init__(self, size, filename):
+        self.size = size
+        self.filename = filename
+
+    def print(self, sprite_description):
+        destination_image = Image.new('RGBA', self.size)
+        with Image.open(self.filename + '.png') as image:
+            for animation in sprite_description.animations:
+                for frame in animation:
+                    sub_image = crop_image(image, frame.position, frame.size)
+                    #destination_image.paste(sub_image, ( , ))
+
+    def save(self):
+        with Image.open(self.filename + '.png') as image:
+            sub_image = crop_image(image, position_and_size[0], position_and_size[1])
+            #destination_image.save('output/' + name + '_cg.png')
 
 if __name__ == '__main__':
-    with open('C:/Users/tom/Pictures/duelyst_tests/f1_general_skinroguelegacy.plist', 'rb') as fp:
-        destination_image = Image.new('RGBA', (2048, 2048))
-        pl = plistlib.load(fp)
-        frames = pl["frames"]
-        animation_id = {}
-        last_y = 0
-        last_x = 0
-        for key, frame in frames.items():
-            full_animation_name = os.path.splitext(key)[0]
-            animation_name = full_animation_name[:-4]
-            animation_number = int(full_animation_name[-3:])
-            if animation_name not in animation_id:
-                print ("New animation: ", animation_name, last_y)
-                animation_id[animation_name] = last_y
-                last_y += 100
-                last_x = 0
-            for key, value in frame.items():
-                if key == "frame" :
-                    sliced_value = value[1:-1]
-                    components = parse_string(sliced_value)
-                    sub_image = crop_image('C:/Users/tom/Pictures/duelyst_tests/f1_general_skinroguelegacy.png', components[0], components[1])
-                    last_x += 100
-                    destination_image.paste(sub_image, (last_x, last_y))
-        destination_image.save('C:/Users/tom/Pictures/duelyst_tests/foo.png')
+    file = sys.argv[1]
+    description = SpriteDescription(file)
+    description.load()
+    size = description.compute_size()
+    filename = os.path.splitext(file)[0]
+    sprite = SpriteImage(size, Path(filename).stem)
+    #sprite.save()
+
+
+    # with open(filename + '.plist', 'rb') as fp:
+    #     with Image.open(filename + '.png') as image:
+    #         destination_image = Image.new('RGBA', (2048, 2048))
+    #         pl = plistlib.load(fp)
+    #         frames = pl["frames"]
+    #         animation_id = {}
+    #         last_y = 0
+    #         last_x = 0
+
+    #         for key, current_animation in frames.items():
+    #             frame = Frame()
+    #             full_animation_name = os.path.splitext(key)[0]
+    #             animation_name = full_animation_name[:-4]
+    #             animation_number = int(full_animation_name[-3:])
+    #             position_and_size = parse_position_and_size(current_animation["frame"][1:-1]) # remove wrapping brackets
+    #             frame.position = position_and_size[0]
+    #             frame.size = position_and_size[1]
+    #             if animation_name not in animation_id:
+    #                 print ("New animation: ", animation_name, last_y)
+    #                 animation_id[animation_name] = Animation()
+    #                 animation_id[animation_name].frames.append(frame)
+
+
+
+
+    # sub_image = crop_image(image, position_and_size[0], position_and_size[1])
+    # # destination_image.paste(sub_image, ( , ))
+    # sprite.save()
+    # output_name = Path(filename).stem
+    # destination_image.save('output/' + output_name + '_cg.png')
